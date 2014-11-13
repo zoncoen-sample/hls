@@ -1,0 +1,129 @@
+function main() {
+    infile=$1
+    outdir=$2
+
+    if [ ! -f $infile ]; then
+        error "'$infile' does not exist."
+        exit 1
+    fi
+
+    if [ -d $outdir ]; then
+        error "'$outdir' directory already exists."
+        exit 1
+    fi
+
+    mkdir $outdir
+
+    info "Transcode $infile"
+    ffmpeg -i $infile -acodec copy -vcodec copy \
+        -vbsf h264_mp4toannexb \
+        -map 0 \
+        -f segment \
+        -segment_format mpegts \
+        -segment_time 5 \
+        -segment_list $outdir/playlist.m3u8 \
+        -segment_list_flags -cache \
+        $outdir/stream_%d.ts
+    assert $? "Transcode $infile"
+}
+
+info() {
+    echo -e "==> \033[;1m$@\033[m"
+}
+
+warn() {
+    echo -e "==> \033[31m$@\033[m"
+}
+
+error() {
+    echo -e "==> \033[31;4m$@\033[m"
+}
+
+success() {
+    echo -e "==> \033[32m$@\033[m"
+}
+
+assert() {
+    result=$1
+    message=$2
+    if test $result -ne 0; then
+        if test $# -eq 3; then
+            teardown=$3
+            eval "$teardown"
+        fi
+        error "$message failed"
+        exit 1
+    fi
+    success "$message succeeded"
+}
+
+function usage() {
+    cat <<EOF
+$(basename ${0}) is a tool for transcoding to hls.
+
+Usage:
+    $(basename ${0}) [<options>] infile
+
+Options:
+    --out-dir, -o     set out directory
+    --help, -h        print this
+    --version, -v     print $(basename ${0}) version
+    --debug, -d       print trace the execution of all commands
+EOF
+}
+
+function version() {
+    echo "$(basename ${0}) version 0.0.1"
+}
+
+# default value
+outdir='hls'
+
+# check options
+declare -i argc=0
+declare -a argv=()
+
+while (( $# > 0 ))
+do
+    case $1 in
+        --help|-h)
+            usage
+            exit 0
+        ;;
+
+        --version|-v)
+            version
+            exit 0
+        ;;
+
+        --debug|-d)
+            set -x
+        ;;
+
+        --out-dir|-o)
+            outdir=${2}
+            shift
+        ;;
+
+        -*)
+            warn "Invalid option '${1}'"
+            usage
+            exit 1
+        ;;
+
+        *)
+            ((++argc))
+            argv+=("$1")
+            ;;
+    esac
+    shift
+done
+
+# check args
+if test $argc -ne 1; then
+    error "This script requires 1 argument."
+    usage
+    exit 1
+fi
+
+main ${argv[0]} $outdir
